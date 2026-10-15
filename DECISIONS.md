@@ -1,0 +1,7 @@
+# DECISIONS.md
+
+1. **Indexes.** `attendance_logs`: unique `(emp_code, date)` (one record per day, the punch-in race guard, employee/month queries); `(date desc, emp_code)` for the default list order and the leaderboard's month scan; `(status, date desc, emp_code)` for status-filtered lists; `(emp_code, punch_in desc)` for finding the record to punch out. `employees`: unique `emp_code`, `(department, emp_code)`, `(joined_on)` and `(department, joined_on)` for headcount. I considered and rejected an index on `late_minutes`, because the month's date range is already selective and it would add write cost.
+2. **Punch-in race.** Both requests read the employee, compute the same `(emp_code, date)` and call `insert_one`. The unique index lets exactly one succeed; the other gets `DuplicateKeyError`, which I turn into 409. No read-then-write.
+3. **Ties.** The `$rank` window gives tied employees the same rank, and `limit` filters on `rank <= limit` afterwards. A tie at the cutoff returns all tied rows, so the response can be longer than `limit`.
+4. **Headcount.** The summary pipeline starts from `employees` (joined on or before month end) and `$lookup`s each person's logs, so people with no logs still produce a row and are counted.
+5. **100x data.** Pre-aggregate daily department stats into a summary collection (or materialized view) instead of scanning raw logs for each request, and shard by `emp_code`.
